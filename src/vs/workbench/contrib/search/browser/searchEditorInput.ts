@@ -11,7 +11,7 @@ import { ITextModel, ITextBufferFactory } from 'vs/editor/common/model';
 import { localize } from 'vs/nls';
 import { IInstantiationService, ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
 import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
-import { IEditorInputFactory, GroupIdentifier, EditorInput, SaveContext, IRevertOptions } from 'vs/workbench/common/editor';
+import { IEditorInputFactory, GroupIdentifier, EditorInput, SaveContext, IRevertOptions, ISaveOptions } from 'vs/workbench/common/editor';
 import { IModelService } from 'vs/editor/common/services/modelService';
 import { IModeService } from 'vs/editor/common/services/modeService';
 import { IEditorGroupsService } from 'vs/workbench/services/editor/common/editorGroupsService';
@@ -68,16 +68,17 @@ export class SearchEditorInput extends EditorInput {
 
 		this.model = getModel();
 
-		const workingCopyAdapter: IWorkingCopy = {
-			resource: this.resource,
-			name: basename(this.resource.path),
-			capabilities: this.isUntitled() ? WorkingCopyCapabilities.Untitled : 0,
-			onDidChangeDirty: this.onDidChangeDirty,
-			onDidChangeContent: this.onDidChangeDirty,
-			isDirty: () => this.isDirty(),
-			backup: () => this.backup(),
-			save: (options) => this.save(0, options),
-			revert: () => this.revert(0),
+		const input = this;
+		const workingCopyAdapter = new class implements IWorkingCopy {
+			readonly resource = input.getResource();
+			get name() { return input.getName(); }
+			readonly capabilities = input.isUntitled() ? WorkingCopyCapabilities.Untitled : 0;
+			readonly onDidChangeDirty = input.onDidChangeDirty;
+			readonly onDidChangeContent = input.onDidChangeDirty;
+			isDirty(): boolean { return input.isDirty(); }
+			backup(): Promise<IWorkingCopyBackup> { return input.backup(); }
+			save(options?: ISaveOptions): Promise<boolean> { return input.save(0, options); }
+			revert(options?: IRevertOptions): Promise<boolean> { return input.revert(0, options); }
 		};
 
 		this.workingCopyService.registerWorkingCopy(workingCopyAdapter);
