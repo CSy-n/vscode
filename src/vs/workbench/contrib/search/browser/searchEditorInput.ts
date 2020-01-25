@@ -18,8 +18,7 @@ import { IEditorGroupsService } from 'vs/workbench/services/editor/common/editor
 import { ITextFileSaveOptions, ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
 import type { IWorkbenchContribution } from 'vs/workbench/common/contributions';
 import { FileEditorInput } from 'vs/workbench/contrib/files/common/editors/fileEditorInput';
-import { dirname, joinPath, isEqual } from 'vs/base/common/resources';
-import { IHistoryService } from 'vs/workbench/services/history/common/history';
+import { joinPath, isEqual } from 'vs/base/common/resources';
 import { IWorkbenchEnvironmentService } from 'vs/workbench/services/environment/common/environmentService';
 import { IFileDialogService } from 'vs/platform/dialogs/common/dialogs';
 import { basename } from 'vs/base/common/path';
@@ -72,7 +71,7 @@ export class SearchEditorInput extends EditorInput {
 		const workingCopyAdapter: IWorkingCopy = {
 			resource: this.resource,
 			name: basename(this.resource.path),
-			capabilities: this.resource.scheme === 'search-editor' ? WorkingCopyCapabilities.Untitled : 0,
+			capabilities: this.isUntitled() ? WorkingCopyCapabilities.Untitled : 0,
 			onDidChangeDirty: this.onDidChangeDirty,
 			onDidChangeContent: this.onDidChangeDirty,
 			isDirty: () => this.isDirty(),
@@ -89,25 +88,29 @@ export class SearchEditorInput extends EditorInput {
 	}
 
 	async save(group: GroupIdentifier, options?: ITextFileSaveOptions): Promise<boolean> {
-		if (this.resource.scheme === 'search-editor') {
-			const path = await this.promptForPath(this.resource, await this.suggestFileName(), options?.availableFileSystems);
-			if (path) {
-				if (await this.textFileService.saveAs(this.resource, path, options)) {
-					this.setDirty(false);
-					if (options?.context !== SaveContext.EDITOR_CLOSE && !isEqual(path, this.resource)) {
-						const replacement = this.instantiationService.invokeFunction(getOrMakeSearchEditorInput, { uri: path });
-						await this.editorService.replaceEditors([{ editor: this, replacement, options: { pinned: true } }], group);
-						return true;
-					} else if (options?.context === SaveContext.EDITOR_CLOSE) {
-						return true;
-					}
-				}
-			}
-			return false;
+		if (this.isUntitled()) {
+			return this.saveAs(group, options);
 		} else {
 			this.setDirty(false);
 			return !!this.textFileService.write(this.resource, (await this.model).getValue(), options);
 		}
+	}
+
+	async saveAs(group: GroupIdentifier, options?: ITextFileSaveOptions): Promise<boolean> {
+		const path = await this.promptForPath(this.resource, await this.suggestFileName(), options?.availableFileSystems);
+		if (path) {
+			if (await this.textFileService.saveAs(this.resource, path, options)) {
+				this.setDirty(false);
+				if (options?.context !== SaveContext.EDITOR_CLOSE && !isEqual(path, this.resource)) {
+					const replacement = this.instantiationService.invokeFunction(getOrMakeSearchEditorInput, { uri: path });
+					await this.editorService.replaceEditors([{ editor: this, replacement, options: { pinned: true } }], group);
+					return true;
+				} else if (options?.context === SaveContext.EDITOR_CLOSE) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	// Brining this over from textFileService because it only suggests for untitled scheme.
@@ -123,7 +126,7 @@ export class SearchEditorInput extends EditorInput {
 	}
 
 	getName(): string {
-		if (this.resource.scheme === 'search-editor') {
+		if (this.isUntitled()) {
 			return this.resolvedModel?.query.query
 				? localize('searchTitle.withQuery', "Search: {0}", this.resolvedModel?.query.query)
 				: localize('searchTitle', "Search");
@@ -159,6 +162,14 @@ export class SearchEditorInput extends EditorInput {
 
 	isDirty() {
 		return this.dirty;
+	}
+
+	isReadonly() {
+		return false;
+	}
+
+	isUntitled() {
+		return this.resource.scheme === 'search-editor';
 	}
 
 	dispose() {
